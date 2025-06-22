@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXE_PATH="$SCRIPT_DIR/DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Release/DotNetFrameworkMcpServer.exe"
+EXE_PATH="$SCRIPT_DIR/DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Debug/DotNetFrameworkMcpServer.exe"
 
 echo "========================================"
 echo "  MCP Tool Testing Script"
@@ -18,7 +18,7 @@ check_prerequisites() {
     if [ ! -f "$EXE_PATH" ]; then
         echo "Error: $EXE_PATH not found!"
         echo "Please build the project first using:"
-        echo "  dotnet build DotNetFrameworkMcpServer.sln -c Release"
+        echo "  dotnet build DotNetFrameworkMcpServer.sln -c Debug"
         echo
         exit 1
     fi

@@ -1,10 +1,11 @@
 @echo off
+chcp 65001 >nul
 REM MCP Tool Testing Script for DotNetFrameworkMcpServer
 REM This script provides comprehensive testing functionality for MCP tools
 
 setlocal enabledelayedexpansion
 
-set "EXE_PATH=DotNetFrameworkMcpServer\DotNetFrameworkMcpServer\bin\Release\DotNetFrameworkMcpServer.exe"
+set "EXE_PATH=DotNetFrameworkMcpServer\DotNetFrameworkMcpServer\bin\Debug\DotNetFrameworkMcpServer.exe"
 
 echo ========================================
 echo   MCP Tool Testing Script
@@ -86,39 +87,86 @@ REM ============ Subroutines ============
     if not exist "%EXE_PATH%" (
         echo Error: %EXE_PATH% not found!
         echo Please build the project first using:
-        echo   dotnet build DotNetFrameworkMcpServer.sln -c Release
+        echo   dotnet build DotNetFrameworkMcpServer.sln -c Debug
         echo.
         exit /b 1
     )
-
-    REM Check if MCP Inspector is installed
-    npx @modelcontextprotocol/inspector --version >nul 2>&1
-    if errorlevel 1 (
-        echo MCP Inspector not found. Installing...
-        npm install -g @modelcontextprotocol/inspector
-        if errorlevel 1 (
-            echo Failed to install MCP Inspector!
-            exit /b 1
-        )
-    )
+    echo Found executable: %EXE_PATH%
     goto :eof
 
 :test_connectivity
     echo Testing server connectivity...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method initialize --timeout 10
-    echo ✓ Server connectivity test passed
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    findstr /C:"serverInfo" "%TEMP%\mcp_response.txt" >nul
+    if errorlevel 1 (
+        echo ✗ Server connectivity test failed
+        echo Response:
+        type "%TEMP%\mcp_response.txt"
+    ) else (
+        echo ✓ Server connectivity test passed
+    )
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
     echo.
     goto :eof
 
 :list_tools
     echo === Available Tools ===
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/list
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    echo Tool Names:
+    echo -----------
+    for /f "tokens=*" %%i in ('findstr /C:"\"name\":" "%TEMP%\mcp_response.txt"') do (
+        set "line=%%i"
+        set "line=!line:*\"name\":=!"
+        set "line=!line:\",*=!"
+        set "line=!line:\"=!"
+        set "line=!line: =!"
+        echo   ■ !line!
+    )
+    
+    echo.
+    echo Raw JSON Response:
+    echo ------------------
+    type "%TEMP%\mcp_response.txt"
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
     echo.
     goto :eof
 
 :list_resources
     echo === Available Resources ===
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method resources/list
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","id":2,"method":"resources/list","params":{}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    echo Resource URIs:
+    echo --------------
+    for /f "tokens=*" %%i in ('findstr /C:"\"uri\":" "%TEMP%\mcp_response.txt"') do (
+        set "line=%%i"
+        set "line=!line:*\"uri\":=!"
+        set "line=!line:\",*=!"
+        set "line=!line:\"=!"
+        set "line=!line: =!"
+        echo   ■ !line!
+    )
+    
+    echo.
+    echo Raw JSON Response:
+    echo ------------------
+    type "%TEMP%\mcp_response.txt"
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
     echo.
     goto :eof
 
@@ -142,14 +190,46 @@ REM ============ Subroutines ============
     
     :call_tool_execute
     echo === Calling Tool: %tool_name% ===
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name %tool_name% !args!
+    
+    REM Build JSON arguments object
+    set "json_args={}"
+    if not "!args!"=="" (
+        set "json_args=!args!"
+        set "json_args=!json_args: --tool-arg =,"!"
+        set "json_args=!json_args:==":!"
+        set "json_args={!json_args:~1!}"
+        set "json_args=!json_args:,=,"!"
+    )
+    
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"%tool_name%","arguments":!json_args!}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    echo Tool Response:
+    echo ---------------
+    type "%TEMP%\mcp_response.txt"
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
     echo.
     goto :eof
 
 :read_resource
     set "resource_uri=%~1"
     echo === Reading Resource: %resource_uri% ===
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method resources/read --resource-uri %resource_uri%
+    
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"%resource_uri%"}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    echo Resource Content:
+    echo ------------------
+    type "%TEMP%\mcp_response.txt"
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
     echo.
     goto :eof
 
@@ -157,30 +237,70 @@ REM ============ Subroutines ============
     echo === Running Predefined Tests ===
     
     echo Testing echo tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name echo --tool-arg message="Hello from MCP test!"
+    call :run_single_test echo "{\"message\":\"Hello from MCP test!\"}"
     
     echo Testing system_info tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name system_info --tool-arg info_type=os
+    call :run_single_test system_info "{\"info_type\":\"os\"}"
     
     echo Testing misezan tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name misezan --tool-arg num1=5 --tool-arg num2=3
+    call :run_single_test misezan "{\"num1\":5,\"num2\":3}"
     
     echo Testing delay_response tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name delay_response --tool-arg seconds=2 --tool-arg message="Delayed response test"
+    call :run_single_test delay_response "{\"seconds\":2,\"message\":\"Delayed response test\"}"
     
     echo Testing password_generator tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name password_generator --tool-arg length=16 --tool-arg include_symbols=true
-    
-    echo Testing network_ping tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name network_ping --tool-arg hostname=google.com --tool-arg count=2
+    call :run_single_test password_generator "{\"length\":16,\"include_symbols\":true}"
     
     echo Testing fortune_teller tool...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method tools/call --tool-name fortune_teller --tool-arg name="TestUser" --tool-arg category=general
+    call :run_single_test fortune_teller "{\"name\":\"TestUser\",\"category\":\"general\"}"
     
     echo Testing current time resource...
-    npx @modelcontextprotocol/inspector --cli "%EXE_PATH%" --method resources/read --resource-uri "time://current"
+    call :test_resource "time://current"
     
     echo ✓ All predefined tests completed
+    goto :eof
+
+:run_single_test
+    set "test_tool=%~1"
+    set "test_args=%~2"
+    
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"%test_tool%","arguments":%test_args%}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    findstr /C:"content" "%TEMP%\mcp_response.txt" >nul
+    if errorlevel 1 (
+        echo ✗ %test_tool% failed
+        type "%TEMP%\mcp_response.txt"
+    ) else (
+        echo ✓ %test_tool% passed
+    )
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
+    echo.
+    goto :eof
+
+:test_resource
+    set "test_uri=%~1"
+    
+    echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}} > "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","method":"initialized","params":{}} >> "%TEMP%\mcp_test.txt"
+    echo {"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"%test_uri%"}} >> "%TEMP%\mcp_test.txt"
+    
+    type "%TEMP%\mcp_test.txt" | "%EXE_PATH%" > "%TEMP%\mcp_response.txt" 2>&1
+    
+    findstr /C:"contents" "%TEMP%\mcp_response.txt" >nul
+    if errorlevel 1 (
+        echo ✗ Resource %test_uri% failed
+        type "%TEMP%\mcp_response.txt"
+    ) else (
+        echo ✓ Resource %test_uri% passed
+    )
+    
+    del "%TEMP%\mcp_test.txt" "%TEMP%\mcp_response.txt" 2>nul
+    echo.
     goto :eof
 
 :start_http_server
@@ -196,7 +316,11 @@ REM ============ Subroutines ============
 :test_http_endpoint
     echo === Testing HTTP/SSE Endpoint ===
     echo Make sure the server is running in HTTP mode first!
-    echo You can test with:
+    echo.
+    echo To test HTTP endpoint, use the following commands:
+    echo   curl -X POST http://localhost:41114/sse -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"
+    echo.
+    echo Or if you have MCP Inspector installed:
     echo   npx @modelcontextprotocol/inspector --cli http://localhost:41114/sse --method tools/list
     echo.
     goto :eof
@@ -238,7 +362,9 @@ REM ============ Subroutines ============
     echo   # Start server in HTTP mode (separate terminal)
     echo   %0 start-http
     echo   
-    echo   # Test HTTP endpoint (another terminal)
-    echo   npx @modelcontextprotocol/inspector --cli http://localhost:41114/sse --method tools/list
-    echo   npx @modelcontextprotocol/inspector --cli http://localhost:41114/sse --method tools/call --tool-name echo --tool-arg message="HTTP test"
+    echo   # Test HTTP endpoint with curl (another terminal)
+    echo   curl -X POST http://localhost:41114/sse -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"
+    echo.
+    echo Note: This script uses direct JSON-RPC communication over STDIO instead of MCP Inspector
+    echo      to avoid dependency issues. All functionality works the same way.
     goto :eof

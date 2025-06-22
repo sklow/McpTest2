@@ -40,6 +40,9 @@ dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Release
 # Build Debug
 dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Debug
 
+# Quick Debug build using batch script (Windows)
+build-debug.bat
+
 # Clean
 dotnet clean DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln
 ```
@@ -137,15 +140,20 @@ _resources[newResource.Uri] = newResource;
 ## Testing
 
 ### Test Scripts
-All test scripts are located in `DotNetFrameworkMcpServer/` directory:
+All test scripts are now located in the root directory:
 
-- **quick-test.bat** - Comprehensive functionality test (requires Release build)
+**Primary Test Scripts:**
+- **quick-test.bat** - Comprehensive functionality test (requires Debug build)
 - **test-mcp-simple.bat [command]** - Targeted testing (commands: list-tools, list-resources, test-echo, help)
 - **test-mcp-inspector.{bat,sh,ps1}** - MCP Inspector integration testing
 - **test-mcp-tools.{bat,sh}** - Comprehensive tool testing with detailed options
 
+**Additional Test Scripts:**
+- **test-mcp-{en,jp}.{bat,ps1}** - Language-specific testing variants
+- **test_mcp_manually.sh** - Manual testing script
+
 ### Testing Prerequisites
-- Release build: `DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Release/DotNetFrameworkMcpServer.exe`
+- Debug build: `DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Debug/DotNetFrameworkMcpServer.exe`
 - For MCP Inspector: Node.js/npm with `@modelcontextprotocol/inspector`
 
 ## Key Dependencies and Configuration
@@ -199,3 +207,44 @@ This server is designed specifically for STDIO transport to integrate with Claud
 - Console output is avoided in STDIO mode to prevent JSON-RPC interference  
 - log4net is used for logging to avoid STDIO conflicts
 - Data structures (dictionaries, arrays, tables, graphs) persist in memory across tool calls
+
+## Important Reminders
+
+- Always build Debug configuration before running tests (test scripts require Debug build)
+- Avoid console output in STDIO mode to prevent JSON-RPC interference
+- Use log4net for debugging instead of Console.WriteLine when troubleshooting STDIO issues
+
+## Important Implementation Details
+
+**Character Encoding**: UTF-8 without BOM is critical for proper JSON-RPC communication. The STDIO transport uses `new UTF8Encoding(false)` to prevent BOM interference.
+
+**Error Handling**: All console output in STDIO mode must go to stderr (`Console.Error.WriteLine`) to avoid interfering with JSON-RPC communication on stdout.
+
+**MCP Protocol Methods**: The server implements these exact method names:
+- `initialize` - Initialize the server with client capabilities
+- `initialized` - Notification that initialization is complete (no ID, notification only)
+- `tools/list`, `tools/call` - Tool operations
+- `resources/list`, `resources/read` - Resource operations
+
+Note: Use `initialized` not `notifications/initialized` - this was a common error in early test scripts.
+
+**Tool Architecture**: Tools are implemented as `McpTool` objects with:
+- `Name`: Tool identifier
+- `Description`: Human-readable description  
+- `InputSchema`: JSON schema for parameter validation
+- `ExecuteFunc`: Async function that processes arguments and returns results
+
+**Resource Architecture**: Resources use URI-based addressing with `McpResource` objects containing:
+- `Uri`: Resource identifier (scheme://path format)
+- `Name`: Display name
+- `Description`: Human-readable description
+- `MimeType`: Content type
+- `ReadFunc`: Async function that returns resource content
+
+**Data Persistence**: The server maintains in-memory data structures across tool calls:
+- `_dictionaries`: Key-value stores by name
+- `_arrays`: Lists by name  
+- `_tables`: Table structures by name
+- `_graphs`: Graph adjacency lists by name
+
+This enables stateful operations where tools can store and retrieve data across multiple invocations within the same server session.
