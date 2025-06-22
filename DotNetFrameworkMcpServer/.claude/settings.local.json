@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:modelcontextprotocol.io)",
+      "WebFetch(domain:github.com)",
+      "Bash(cmd.exe /c \"where dotnet\")",
+      "Bash(cmd.exe /c \"where msbuild\")",
+      "Bash(cmd.exe:*)",
+      "Bash(dotnet build:*)",
+      "Bash(/home/hosin/bin/dotnet build:*)",
+      "Bash(ls:*)",
+      "Bash(bash:*)",
+      "Bash(dotnet --version)",
+      "Bash(cat:*)",
+      "Bash(dos2unix:*)",
+      "Bash(msbuild:*)",
+      "Bash(rm:*)"
+    ],
+    "deny": []
+  }
+}
