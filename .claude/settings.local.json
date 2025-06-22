@@ -11,7 +11,12 @@
       "Bash(git init:*)",
       "Bash(git add:*)",
       "Bash(git rm:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx:*)",
+      "Bash(find:*)",
+      "Bash(mv:*)",
+      "Bash(./test-mcp-inspector.bat list-tools)",
+      "Bash(git config:*)"
     ],
     "deny": []
   }
