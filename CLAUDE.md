@@ -248,3 +248,7 @@ Note: Use `initialized` not `notifications/initialized` - this was a common erro
 - `_graphs`: Graph adjacency lists by name
 
 This enables stateful operations where tools can store and retrieve data across multiple invocations within the same server session.
+
+## Memories
+
+- Added initial memory to track key guidance and insights about the project
