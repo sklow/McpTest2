@@ -23,6 +23,9 @@ namespace DotNetFrameworkMcpServer
         private static readonly ILog Log = LogManager.GetLogger(typeof(McpServer));
         
         private bool _initialized = false;
+        private bool _toolsInitialized = false;
+        private bool _resourcesInitialized = false;
+        private DateTime _serverStartTime = DateTime.Now;
         private readonly Dictionary<string, McpTool> _tools;
         private readonly Dictionary<string, McpResource> _resources;
         
@@ -35,6 +38,7 @@ namespace DotNetFrameworkMcpServer
 
         public McpServer()
         {
+            Log.Info("McpServer constructor started");
             _tools = new Dictionary<string, McpTool>();
             _resources = new Dictionary<string, McpResource>();
             _dictionaries = new Dictionary<string, Dictionary<string, object>>();
@@ -42,7 +46,10 @@ namespace DotNetFrameworkMcpServer
             _tables = new Dictionary<string, List<Dictionary<string, object>>>();
             _graphs = new Dictionary<string, Dictionary<string, List<string>>>();
             _random = new Random();
+            
+            Log.Info("Initializing default tools and resources");
             InitializeDefaultToolsAndResources();
+            Log.Info($"McpServer constructor completed. Tools count: {_tools.Count}, Resources count: {_resources.Count}");
         }
 
         public async Task<string> HandleMessageAsync(string message)
@@ -91,6 +98,9 @@ namespace DotNetFrameworkMcpServer
                 case "resources/read":
                     return await HandleResourcesReadAsync(request);
                 
+                case "server/status":
+                    return HandleServerStatus(request);
+                
                 default:
                     return CreateErrorResponse(request.Id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
             }
@@ -98,6 +108,8 @@ namespace DotNetFrameworkMcpServer
 
         private Task<string> HandleInitializeAsync(JsonRpcRequest request)
         {
+            Log.Info($"HandleInitializeAsync called with request ID: {request.Id}");
+            
             var result = new
             {
                 protocolVersion = "2024-11-05",
@@ -113,26 +125,54 @@ namespace DotNetFrameworkMcpServer
                 }
             };
 
+            Log.Info($"Initialize response prepared. Protocol version: 2024-11-05");
             return Task.FromResult(CreateSuccessResponse(request.Id, result));
         }
 
         private string HandleInitialized(JsonRpcRequest request)
         {
+            Log.Info($"HandleInitialized called. Request ID: {request.Id}");
+            
+            // Verify that tools and resources are properly initialized
+            if (!_toolsInitialized)
+            {
+                Log.Error("Tools not properly initialized");
+                return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InternalError, "Tools not initialized");
+            }
+            
+            if (!_resourcesInitialized)
+            {
+                Log.Error("Resources not properly initialized");
+                return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InternalError, "Resources not initialized");
+            }
+            
             _initialized = true;
-            Log.Info("MCP Server initialized successfully");
+            var uptime = DateTime.Now - _serverStartTime;
+            Log.Info($"MCP Server initialized successfully after {uptime.TotalMilliseconds:F0}ms. Tools: {_tools.Count}, Resources: {_resources.Count}");
+            
+            // Log detailed tool list for debugging
+            Log.Info("Available tools: " + string.Join(", ", _tools.Keys));
+            Log.Info("Available resources: " + string.Join(", ", _resources.Keys));
+            
             return null;
         }
 
         private string HandleToolsList(JsonRpcRequest request)
         {
+            Log.Info($"HandleToolsList called. Request ID: {request.Id}, Initialized: {_initialized}");
+            
             if (!_initialized)
             {
+                Log.Warn("Tools list requested but server not initialized");
                 return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InvalidRequest, "Server not initialized");
             }
 
+            Log.Info($"Processing tools list. Total tools: {_tools.Count}");
+            
             var tools = new List<object>();
             foreach (var tool in _tools.Values)
             {
+                Log.Debug($"Adding tool to list: {tool.Name}");
                 tools.Add(new
                 {
                     name = tool.Name,
@@ -141,34 +181,45 @@ namespace DotNetFrameworkMcpServer
                 });
             }
 
+            Log.Info($"Tools list prepared with {tools.Count} tools");
             var result = new { tools = tools };
             return CreateSuccessResponse(request.Id, result);
         }
 
         private async Task<string> HandleToolsCallAsync(JsonRpcRequest request)
         {
+            Log.Info($"HandleToolsCall called. Request ID: {request.Id}, Initialized: {_initialized}");
+            
             if (!_initialized)
             {
+                Log.Warn("Tool call requested but server not initialized");
                 return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InvalidRequest, "Server not initialized");
             }
 
             var toolName = request.Params?["name"]?.ToString();
             var arguments = request.Params?["arguments"] as JObject;
+            
+            Log.Info($"Tool call request: {toolName}");
+            Log.Debug($"Tool arguments: {arguments?.ToString()}");
 
             if (string.IsNullOrEmpty(toolName))
             {
+                Log.Warn("Tool call missing tool name");
                 return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InvalidParams, "Tool name is required");
             }
 
             if (!_tools.ContainsKey(toolName))
             {
+                Log.Warn($"Tool not found: {toolName}. Available tools: {string.Join(", ", _tools.Keys)}");
                 return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InvalidParams, $"Tool not found: {toolName}");
             }
 
             try
             {
+                Log.Info($"Executing tool: {toolName}");
                 var tool = _tools[toolName];
                 var result = await tool.ExecuteAsync(arguments);
+                Log.Info($"Tool {toolName} executed successfully");
                 
                 var response = new
                 {
@@ -186,20 +237,27 @@ namespace DotNetFrameworkMcpServer
             }
             catch (Exception ex)
             {
+                Log.Error($"Tool execution failed for {toolName}: {ex.Message}", ex);
                 return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InternalError, $"Tool execution failed: {ex.Message}");
             }
         }
 
         private string HandleResourcesList(JsonRpcRequest request)
         {
+            Log.Info($"HandleResourcesList called. Request ID: {request.Id}, Initialized: {_initialized}");
+            
             if (!_initialized)
             {
+                Log.Warn("Resources list requested but server not initialized");
                 return CreateErrorResponse(request.Id, JsonRpcErrorCodes.InvalidRequest, "Server not initialized");
             }
 
+            Log.Info($"Processing resources list. Total resources: {_resources.Count}");
+            
             var resources = new List<object>();
             foreach (var resource in _resources.Values)
             {
+                Log.Debug($"Adding resource to list: {resource.Uri}");
                 resources.Add(new
                 {
                     uri = resource.Uri,
@@ -209,6 +267,7 @@ namespace DotNetFrameworkMcpServer
                 });
             }
 
+            Log.Info($"Resources list prepared with {resources.Count} resources");
             var result = new { resources = resources };
             return CreateSuccessResponse(request.Id, result);
         }
@@ -259,17 +318,41 @@ namespace DotNetFrameworkMcpServer
 
         private void InitializeDefaultToolsAndResources()
         {
-            // Core Tools (11 tools)
-            InitializeCoreTools();
+            Log.Info("Starting tool and resource initialization");
             
-            // Data Structure Tools (10 tools)
-            InitializeDataStructureTools();
-            
-            // Advanced Tools (10 tools)
-            InitializeAdvancedTools();
-            
-            // Resources
-            InitializeResources();
+            try
+            {
+                // Core Tools (11 tools)
+                Log.Info("Initializing core tools");
+                InitializeCoreTools();
+                Log.Info($"Core tools initialized. Current tool count: {_tools.Count}");
+                
+                // Data Structure Tools (10 tools)
+                Log.Info("Initializing data structure tools");
+                InitializeDataStructureTools();
+                Log.Info($"Data structure tools initialized. Current tool count: {_tools.Count}");
+                
+                // Advanced Tools (10 tools)
+                Log.Info("Initializing advanced tools");
+                InitializeAdvancedTools();
+                Log.Info($"Advanced tools initialized. Current tool count: {_tools.Count}");
+                
+                _toolsInitialized = true;
+                Log.Info($"All tools initialization completed. Total tools: {_tools.Count}");
+                
+                // Resources
+                Log.Info("Initializing resources");
+                InitializeResources();
+                _resourcesInitialized = true;
+                Log.Info($"Resources initialized. Current resource count: {_resources.Count}");
+                
+                Log.Info($"Tool and resource initialization completed successfully. Tools: {_tools.Count}, Resources: {_resources.Count}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error during tool and resource initialization: {ex.Message}", ex);
+                throw;
+            }
         }
 
         private void InitializeCoreTools()
@@ -294,7 +377,15 @@ namespace DotNetFrameworkMcpServer
                 var message = args?["message"]?.ToString() ?? "No message provided";
                 return Task.FromResult($"Echo: {message}");
             };
-            _tools[echoTool.Name] = echoTool;
+            if (!string.IsNullOrEmpty(echoTool.Name))
+            {
+                _tools[echoTool.Name] = echoTool;
+                Log.Debug($"Registered tool: {echoTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register echo tool: Name is null or empty");
+            }
 
             // 2. Misezan Tool (Saya-Ka's fifth arithmetic operation)
             var misezanTool = new McpTool
@@ -319,7 +410,15 @@ namespace DotNetFrameworkMcpServer
                 var result = Math.Max(a, b) - Math.Min(a, b);
                 return Task.FromResult($"見せ算: {a} 見せ算 {b} = {result}");
             };
-            _tools[misezanTool.Name] = misezanTool;
+            if (!string.IsNullOrEmpty(misezanTool.Name))
+            {
+                _tools[misezanTool.Name] = misezanTool;
+                Log.Debug($"Registered tool: {misezanTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register misezan tool: Name is null or empty");
+            }
 
             // 3. Delay Response Tool
             var delayTool = new McpTool
@@ -344,7 +443,15 @@ namespace DotNetFrameworkMcpServer
                 await Task.Delay(seconds * 1000);
                 return $"Delayed {seconds} seconds: {message}";
             };
-            _tools[delayTool.Name] = delayTool;
+            if (!string.IsNullOrEmpty(delayTool.Name))
+            {
+                _tools[delayTool.Name] = delayTool;
+                Log.Debug($"Registered tool: {delayTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register delay tool: Name is null or empty");
+            }
 
             // 4. System Info Tool
             var systemInfoTool = new McpTool
@@ -395,7 +502,15 @@ namespace DotNetFrameworkMcpServer
                 }
                 return await Task.FromResult(sb.ToString());
             };
-            _tools[systemInfoTool.Name] = systemInfoTool;
+            if (!string.IsNullOrEmpty(systemInfoTool.Name))
+            {
+                _tools[systemInfoTool.Name] = systemInfoTool;
+                Log.Debug($"Registered tool: {systemInfoTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register system_info tool: Name is null or empty");
+            }
 
             // 5. File Operations Tool
             var fileOpsTool = new McpTool
@@ -445,7 +560,15 @@ namespace DotNetFrameworkMcpServer
                     return await Task.FromResult($"File operation error: {ex.Message}");
                 }
             };
-            _tools[fileOpsTool.Name] = fileOpsTool;
+            if (!string.IsNullOrEmpty(fileOpsTool.Name))
+            {
+                _tools[fileOpsTool.Name] = fileOpsTool;
+                Log.Debug($"Registered tool: {fileOpsTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register file_operations tool: Name is null or empty");
+            }
 
             // 6. Network Ping Tool
             var pingTool = new McpTool
@@ -481,7 +604,15 @@ namespace DotNetFrameworkMcpServer
                     return $"Ping failed: {ex.Message}";
                 }
             };
-            _tools[pingTool.Name] = pingTool;
+            if (!string.IsNullOrEmpty(pingTool.Name))
+            {
+                _tools[pingTool.Name] = pingTool;
+                Log.Debug($"Registered tool: {pingTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register network_ping tool: Name is null or empty");
+            }
 
             // 7. Encryption Tool
             var encryptionTool = new McpTool
@@ -530,7 +661,15 @@ namespace DotNetFrameworkMcpServer
                     return await Task.FromResult($"Encryption error: {ex.Message}");
                 }
             };
-            _tools[encryptionTool.Name] = encryptionTool;
+            if (!string.IsNullOrEmpty(encryptionTool.Name))
+            {
+                _tools[encryptionTool.Name] = encryptionTool;
+                Log.Debug($"Registered tool: {encryptionTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register encryption tool: Name is null or empty");
+            }
 
             // 8. Password Generator Tool
             var passwordTool = new McpTool
@@ -566,7 +705,15 @@ namespace DotNetFrameworkMcpServer
                 
                 return await Task.FromResult($"Generated password: {password}");
             };
-            _tools[passwordTool.Name] = passwordTool;
+            if (!string.IsNullOrEmpty(passwordTool.Name))
+            {
+                _tools[passwordTool.Name] = passwordTool;
+                Log.Debug($"Registered tool: {passwordTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register password_generator tool: Name is null or empty");
+            }
 
             // 9. QR Generator Tool (ASCII)
             var qrTool = new McpTool
@@ -596,7 +743,15 @@ namespace DotNetFrameworkMcpServer
                 qr.AppendLine($"QR Code for: {text}");
                 return await Task.FromResult(qr.ToString());
             };
-            _tools[qrTool.Name] = qrTool;
+            if (!string.IsNullOrEmpty(qrTool.Name))
+            {
+                _tools[qrTool.Name] = qrTool;
+                Log.Debug($"Registered tool: {qrTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register qr_generator tool: Name is null or empty");
+            }
 
             // 10. Fortune Teller Tool
             var fortuneTool = new McpTool
@@ -629,7 +784,15 @@ namespace DotNetFrameworkMcpServer
                 
                 return await Task.FromResult($"🔮 Fortune for {category}: {fortune}");
             };
-            _tools[fortuneTool.Name] = fortuneTool;
+            if (!string.IsNullOrEmpty(fortuneTool.Name))
+            {
+                _tools[fortuneTool.Name] = fortuneTool;
+                Log.Debug($"Registered tool: {fortuneTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register fortune_teller tool: Name is null or empty");
+            }
 
             // 11. Memory Monitor Tool
             var memoryTool = new McpTool
@@ -661,7 +824,15 @@ namespace DotNetFrameworkMcpServer
                 
                 return sb.ToString();
             };
-            _tools[memoryTool.Name] = memoryTool;
+            if (!string.IsNullOrEmpty(memoryTool.Name))
+            {
+                _tools[memoryTool.Name] = memoryTool;
+                Log.Debug($"Registered tool: {memoryTool.Name}");
+            }
+            else
+            {
+                Log.Error("Failed to register memory_monitor tool: Name is null or empty");
+            }
         }
 
         private void InitializeDataStructureTools()
@@ -1984,6 +2155,50 @@ namespace DotNetFrameworkMcpServer
                 return await Task.FromResult(JsonConvert.SerializeObject(summary, Formatting.Indented));
             };
             _resources[datastoreResource.Uri] = datastoreResource;
+        }
+        
+        private string HandleServerStatus(JsonRpcRequest request)
+        {
+            Log.Info($"HandleServerStatus called. Request ID: {request.Id}");
+            
+            var uptime = DateTime.Now - _serverStartTime;
+            var status = new
+            {
+                initialized = _initialized,
+                toolsInitialized = _toolsInitialized,
+                resourcesInitialized = _resourcesInitialized,
+                serverStartTime = _serverStartTime.ToString("o"),
+                uptime = new
+                {
+                    totalMilliseconds = uptime.TotalMilliseconds,
+                    totalSeconds = uptime.TotalSeconds,
+                    humanReadable = $"{uptime.Days}d {uptime.Hours}h {uptime.Minutes}m {uptime.Seconds}s"
+                },
+                tools = new
+                {
+                    count = _tools.Count,
+                    names = _tools.Keys.OrderBy(k => k).ToArray()
+                },
+                resources = new
+                {
+                    count = _resources.Count,
+                    uris = _resources.Keys.OrderBy(k => k).ToArray()
+                },
+                dataStructures = new
+                {
+                    dictionaries = _dictionaries.Count,
+                    arrays = _arrays.Count,
+                    tables = _tables.Count,
+                    graphs = _graphs.Count
+                },
+                memory = new
+                {
+                    gcMemoryMB = GC.GetTotalMemory(false) / 1024 / 1024,
+                    workingSetMB = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024
+                }
+            };
+            
+            return CreateSuccessResponse(request.Id, status);
         }
 
         private string CreateSuccessResponse(object id, object result)

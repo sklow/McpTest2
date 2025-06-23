@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTTP MCP Server SSE Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        #log { height: 400px; overflow-y: scroll; background: #f8f9fa; padding: 10px; border: 1px solid #ddd; }
+        .log-entry { margin: 2px 0; font-family: monospace; font-size: 12px; }
+        .log-request { color: #0066cc; }
+        .log-response { color: #009900; }
+        .log-error { color: #cc0000; }
+        .log-sse { color: #6600cc; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>HTTP MCP Server SSE Test</h1>
+        
+        <div class="section info">
+            <h3>Server Configuration</h3>
+            <p>
+                <label>Server URL: 
+                    <input type="text" id="serverUrl" value="http://localhost:8080/mcp" style="width: 300px;">
+                </label>
+            </p>
+            <p><strong>Make sure to start the HTTP MCP server first:</strong><br>
+               <code>DotNetFrameworkMcpServer.exe --transport http</code>
+            </p>
+        </div>
+
+        <div class="section">
+            <h3>MCP Operations</h3>
+            <button onclick="testInitialize()">Initialize</button>
+            <button onclick="testListTools()">List Tools</button>
+            <button onclick="testEcho()">Test Echo Tool</button>
+            <button onclick="testListResources()">List Resources</button>
+            <button onclick="testWithSSE()">Test with SSE</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div class="section">
+            <h3>Server-Sent Events Status</h3>
+            <p id="sseStatus">Not connected</p>
+            <button onclick="connectSSE()">Connect SSE</button>
+            <button onclick="disconnectSSE()">Disconnect SSE</button>
+        </div>
+
+        <div class="section">
+            <h3>Activity Log</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let eventSource = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function sendRequest(method, params = {}, useSSE = false) {
+            const serverUrl = document.getElementById('serverUrl').value;
+            
+            const request = {
+                jsonrpc: "2.0",
+                id: Date.now(),
+                method: method,
+                params: params
+            };
+
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+
+            if (useSSE) {
+                headers.Accept = 'application/json, text/event-stream';
+            } else {
+                headers.Accept = 'application/json';
+            }
+
+            if (sessionId) {
+                headers['Mcp-Session-Id'] = sessionId;
+            }
+
+            log(`→ ${method}: ${JSON.stringify(request)}`, 'request');
+
+            try {
+                const response = await fetch(serverUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(request)
+                });
+
+                // Check for session ID in response
+                const newSessionId = response.headers.get('Mcp-Session-Id');
+                if (newSessionId) {
+                    sessionId = newSessionId;
+                    log(`Session ID: ${sessionId}`, 'info');
+                }
+
+                const responseText = await response.text();
+                
+                if (response.ok) {
+                    log(`← ${method}: ${responseText}`, 'response');
+                    return JSON.parse(responseText);
+                } else {
+                    log(`Error ${response.status}: ${responseText}`, 'error');
+                    return null;
+                }
+            } catch (error) {
+                log(`Network error: ${error.message}`, 'error');
+                return null;
+            }
+        }
+
+        async function testInitialize() {
+            const result = await sendRequest('initialize', {
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                clientInfo: {
+                    name: "web-test-client",
+                    version: "1.0"
+                }
+            });
+
+            if (result && result.result) {
+                log('Initialize successful', 'info');
+                
+                // Send initialized notification
+                await sendRequest('initialized', {});
+            }
+        }
+
+        async function testListTools() {
+            const result = await sendRequest('tools/list');
+            if (result && result.result && result.result.tools) {
+                log(`Found ${result.result.tools.length} tools`, 'info');
+                result.result.tools.forEach(tool => {
+                    log(`  - ${tool.name}: ${tool.description}`, 'info');
+                });
+            }
+        }
+
+        async function testEcho() {
+            const result = await sendRequest('tools/call', {
+                name: 'echo',
+                arguments: {
+                    message: 'Hello from web client!'
+                }
+            });
+
+            if (result && result.result && result.result.content) {
+                log(`Echo result: ${result.result.content[0].text}`, 'info');
+            }
+        }
+
+        async function testListResources() {
+            const result = await sendRequest('resources/list');
+            if (result && result.result && result.result.resources) {
+                log(`Found ${result.result.resources.length} resources`, 'info');
+                result.result.resources.forEach(resource => {
+                    log(`  - ${resource.uri}: ${resource.name}`, 'info');
+                });
+            }
+        }
+
+        async function testWithSSE() {
+            log('Testing with SSE support...', 'info');
+            const result = await sendRequest('tools/call', {
+                name: 'echo',
+                arguments: {
+                    message: 'Hello with SSE!'
+                }
+            }, true);
+        }
+
+        function connectSSE() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(serverUrl);
+            
+            eventSource.onopen = function(event) {
+                document.getElementById('sseStatus').textContent = 'Connected';
+                log('SSE connection opened', 'sse');
+            };
+
+            eventSource.onmessage = function(event) {
+                log(`SSE message: ${event.data}`, 'sse');
+            };
+
+            eventSource.addEventListener('message', function(event) {
+                log(`SSE custom message: ${event.data}`, 'sse');
+            });
+
+            eventSource.addEventListener('ping', function(event) {
+                log(`SSE ping: ${event.data}`, 'sse');
+            });
+
+            eventSource.onerror = function(event) {
+                document.getElementById('sseStatus').textContent = 'Error/Disconnected';
+                log('SSE connection error', 'error');
+            };
+        }
+
+        function disconnectSSE() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                document.getElementById('sseStatus').textContent = 'Disconnected';
+                log('SSE connection closed', 'sse');
+            }
+        }
+
+        // Initialize on page load
+        window.onload = function() {
+            log('Web client ready. Start the MCP server with: DotNetFrameworkMcpServer.exe --transport http', 'info');
+        };
+
+        // Cleanup on page unload
+        window.onbeforeunload = function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        };
+    </script>
+</body>
+</html>

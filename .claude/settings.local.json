@@ -16,7 +16,18 @@
       "Bash(find:*)",
       "Bash(mv:*)",
       "Bash(./test-mcp-inspector.bat list-tools)",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(ls:*)",
+      "Bash(timeout:*)",
+      "Bash(chmod:*)",
+      "Bash(./test-mcp-tools.sh list-tools:*)",
+      "Bash(/home/hosin/bin/dotnet build:*)",
+      "Bash(./build-debug.sh:*)",
+      "Bash(bash:*)",
+      "Bash(dos2unix:*)",
+      "Bash(./build.sh)",
+      "Bash(dotnet --version)",
+      "WebFetch(domain:modelcontextprotocol.io)"
     ],
     "deny": []
   }

@@ -34,26 +34,49 @@ STDIO → JSON-RPC parsing → MCP protocol handling → Tool/Resource execution
 
 ### Build
 ```bash
-# Build Release (recommended)
-dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Release
+# Using build scripts (recommended for this environment)
+./build.sh              # Build Release configuration
+./build-debug.sh         # Build Debug configuration
 
-# Build Debug
-dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Debug
+# Manual build commands
+/home/hosin/bin/dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Release
+/home/hosin/bin/dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Debug
+
+# Alternative using MSBuild (Windows)
+msbuild DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln /p:Configuration=Release
 
 # Quick Debug build using batch script (Windows)
 build-debug.bat
 
 # Clean
-dotnet clean DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln
+/home/hosin/bin/dotnet clean DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln
 ```
 
+**Build Scripts:**
+- `build.sh` - Release build script using dotnet at `/home/hosin/bin/dotnet`
+- `build-debug.sh` - Debug build script using dotnet at `/home/hosin/bin/dotnet`
+
 ### Run
+
+#### STDIO Transport (Default)
 ```bash
-# Run Release build
+# Run Release build with STDIO transport
 DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Release/DotNetFrameworkMcpServer.exe
 
-# Run Debug build  
+# Run Debug build with STDIO transport
 DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Debug/DotNetFrameworkMcpServer.exe
+```
+
+#### HTTP Transport
+```bash
+# Run with HTTP transport on default settings (localhost:8080/mcp)
+DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Release/DotNetFrameworkMcpServer.exe --transport http
+
+# Run with custom HTTP settings
+DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Release/DotNetFrameworkMcpServer.exe --transport http --host localhost --port 9000 --path /api/mcp
+
+# Show help for all command line options
+DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Release/DotNetFrameworkMcpServer.exe --help
 ```
 
 ### Build Dependencies
@@ -152,9 +175,16 @@ All test scripts are now located in the root directory:
 - **test-mcp-{en,jp}.{bat,ps1}** - Language-specific testing variants
 - **test_mcp_manually.sh** - Manual testing script
 
+**HTTP Transport Test Scripts:**
+- **test-http-mcp.bat** - Windows HTTP transport test (PowerShell-based)
+- **test-http-mcp.sh** - Linux/WSL HTTP transport test (curl-based)
+- **test-http-sse.html** - Web-based HTTP transport and SSE testing interface
+
 ### Testing Prerequisites
 - Debug build: `DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/bin/Debug/DotNetFrameworkMcpServer.exe`
 - For MCP Inspector: Node.js/npm with `@modelcontextprotocol/inspector`
+- For HTTP testing: PowerShell (Windows) or curl (Linux/WSL)
+- For SSE testing: Modern web browser that supports Server-Sent Events
 
 ## Key Dependencies and Configuration
 
@@ -169,7 +199,9 @@ All test scripts are now located in the root directory:
 - Logging: log4net.config (avoids STDIO interference)
 - Data persistence: In-memory structures across tool calls
 
-## Claude Desktop Setup
+## Client Setup
+
+### Claude Desktop Setup (STDIO Transport)
 
 Configure Claude Desktop to use this MCP server by adding to your `claude_desktop_config.json`:
 
@@ -195,11 +227,62 @@ Configure Claude Desktop to use this MCP server by adding to your `claude_deskto
 }
 ```
 
+### HTTP Transport Client Setup
+
+For HTTP transport, clients can connect to the server using standard HTTP requests:
+
+**Server URL**: `http://localhost:8080/mcp` (default)
+
+**Required Headers**:
+- `Content-Type: application/json`
+- `Accept: application/json, text/event-stream` (for SSE streaming)
+- `Mcp-Session-Id: <session-id>` (for session management, optional on first request)
+
+**Example HTTP Client Configuration**:
+```json
+{
+  "mcpServers": {
+    "dotnet-framework-mcp-http": {
+      "transport": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
 ## Transport Implementation
 
-**Current:** STDIO transport only (Program.cs:24 initializes StdioServer)
+The server supports two transport methods:
 
-This server is designed specifically for STDIO transport to integrate with Claude Desktop.
+### STDIO Transport (Default)
+- **Usage**: Default transport when no arguments provided
+- **Integration**: Direct integration with Claude Desktop
+- **Initialization**: Program.cs:24 initializes StdioServer
+
+### Streamable HTTP Transport
+- **Usage**: Use `--transport http` command line argument
+- **Protocol**: MCP Streamable HTTP transport specification (2025-03-26)
+- **Features**: 
+  - Single HTTP endpoint supporting POST and GET methods
+  - Server-Sent Events (SSE) for streaming responses
+  - Session management with `Mcp-Session-Id` headers
+  - CORS support for web clients
+  - Event-based streaming with resumption capability
+
+**HTTP Transport Command Line Options:**
+```bash
+# Basic HTTP transport
+DotNetFrameworkMcpServer.exe --transport http
+
+# Custom host and port
+DotNetFrameworkMcpServer.exe --transport http --host localhost --port 9000
+
+# Custom endpoint path
+DotNetFrameworkMcpServer.exe --transport http --path /api/mcp
+
+# All interfaces (be careful with security)
+DotNetFrameworkMcpServer.exe --transport http --host 0.0.0.0 --port 8080
+```
 
 ## Development Notes
 
@@ -249,6 +332,10 @@ Note: Use `initialized` not `notifications/initialized` - this was a common erro
 
 This enables stateful operations where tools can store and retrieve data across multiple invocations within the same server session.
 
-## Memories
+## Development Workflow
 
-- Added initial memory to track key guidance and insights about the project
+**Typical Development Cycle:**
+1. Make code changes to source files in `DotNetFrameworkMcpServer/DotNetFrameworkMcpServer/`
+2. Build Debug version: `dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Debug`
+3. Test changes: `quick-test.bat` (requires Debug build)
+4. Build Release version when ready: `dotnet build DotNetFrameworkMcpServer/DotNetFrameworkMcpServer.sln -c Release`
